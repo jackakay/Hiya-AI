@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.vsix
+.env
+.env.*
+!.env.example
+# Session file written by the extension (port + token) — never commit
+.voice-bug/
+.DS_Store

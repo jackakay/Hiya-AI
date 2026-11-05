@@ -1,0 +1,6 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #1d2330; }
+main { max-width: 480px; margin: 48px auto; padding: 0 16px; }
+form { display: flex; gap: 8px; }
+input { flex: 1; padding: 8px 10px; border: 1px solid #c8ccd4; border-radius: 6px; font: inherit; }
+button { padding: 8px 16px; border: 0; border-radius: 6px; background: #2f5bea; color: #fff; font: inherit; cursor: pointer; }
+ul { padding-left: 20px; }

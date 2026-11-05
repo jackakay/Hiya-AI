@@ -1,0 +1,18 @@
+{
+  "name": "@voice-bug/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./vite": "./src/vite.ts"
+  },
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@voice-bug/shared": "workspace:*",
+    "vite": "^6.0.0"
+  }
+}

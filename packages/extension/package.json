@@ -1,0 +1,33 @@
+{
+  "name": "voice-bug-extension",
+  "displayName": "Voice Bug Reporter",
+  "description": "Say \"that's a bug\" while testing; get a diagnosis in VS Code.",
+  "version": "0.0.1",
+  "private": true,
+  "publisher": "voice-bug",
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Debuggers", "Other"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "voiceBug.showOutput", "title": "Voice Bug: Show Output" },
+      { "command": "voiceBug.restartHub", "title": "Voice Bug: Restart Capture Hub" }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "~1.90.0",
+    "@types/ws": "^8.5.13",
+    "@voice-bug/shared": "workspace:*",
+    "esbuild": "^0.24.2"
+  }
+}
