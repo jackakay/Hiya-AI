@@ -1,0 +1,11 @@
+{
+  "name": "@voice-bug/middleware",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@voice-bug/shared": "workspace:*"
+  }
+}

@@ -4,3 +4,7 @@ packages:
 
 allowBuilds:
   esbuild: true
+  # Pulled in by @google/genai; its postinstall is only a version notice.
+  protobufjs: false
+  # Only needed to sign Marketplace publishes; `vsce package` doesn't use it.
+  "@vscode/vsce-sign": false

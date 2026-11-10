@@ -14,5 +14,9 @@
   "devDependencies": {
     "@voice-bug/shared": "workspace:*",
     "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@ricky0123/vad-web": "^0.0.31",
+    "modern-screenshot": "^4.7.0"
   }
 }

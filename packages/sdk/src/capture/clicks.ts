@@ -59,11 +59,14 @@ export function describeClick(target: Element, x: number, y: number): ClickPaylo
   return payload;
 }
 
-export function captureClicks(emit: (event: BugEvent) => void): () => void {
+/** `tracker` (optional) lets requests started by this click point back to it. */
+export function captureClicks(emit: (event: BugEvent) => void, tracker?: { begin(): string }): () => void {
   const handler = (e: MouseEvent) => {
     if (!(e.target instanceof Element)) return;
     if (e.target.closest("[data-voice-bug-ignore]")) return;
-    emit({ ts: Date.now(), source: "action", type: "click", payload: describeClick(e.target, e.clientX, e.clientY) });
+    const payload = describeClick(e.target, e.clientX, e.clientY);
+    if (tracker) payload.actionId = tracker.begin();
+    emit({ ts: Date.now(), source: "action", type: "click", payload });
   };
   document.addEventListener("click", handler, { capture: true });
   return () => document.removeEventListener("click", handler, { capture: true });

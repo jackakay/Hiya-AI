@@ -1,4 +1,4 @@
-import type { ClientMessage } from "@voice-bug/shared";
+import type { ClientMessage, ServerMessage } from "@voice-bug/shared";
 
 const MAX_QUEUE = 1000;
 const MAX_BACKOFF_MS = 5000;
@@ -14,8 +14,13 @@ export class Transport {
   constructor(
     private readonly url: string,
     private readonly onOpen: () => void = () => {},
+    private readonly onServerMessage: (msg: ServerMessage) => void = () => {},
   ) {
     this.connect();
+  }
+
+  connected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
   }
 
   send(msg: ClientMessage): void {
@@ -42,6 +47,14 @@ export class Transport {
       this.backoff = 250;
       this.onOpen();
       for (const data of this.queue.splice(0)) ws.send(data);
+    });
+    ws.addEventListener("message", (e) => {
+      if (typeof e.data !== "string") return;
+      try {
+        this.onServerMessage(JSON.parse(e.data) as ServerMessage);
+      } catch {
+        // ignore malformed messages
+      }
     });
     ws.addEventListener("close", () => {
       if (this.stopped) return;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import type { ClientMessage } from "@voice-bug/shared";
-import { isLocalOrigin, parseClientMessage, startHub, tokensMatch, type Hub } from "./hub";
+import { describeListenError, isLocalOrigin, parseClientMessage, startHub, tokensMatch, type Hub } from "./hub";
 
 describe("isLocalOrigin", () => {
   it.each([
@@ -36,7 +36,17 @@ describe("parseClientMessage", () => {
     const raw = JSON.stringify({ kind: "hello", protocol: 1, url: "http://localhost", userAgent: "x" });
     expect(parseClientMessage(raw)?.kind).toBe("hello");
   });
+  it("accepts audio and keyboard triggers", () => {
+    expect(parseClientMessage(JSON.stringify({ kind: "audio", id: "utt-1", mimeType: "audio/wav", data: "UklGRg==", durationMs: 900 }))?.kind).toBe("audio");
+    expect(parseClientMessage(JSON.stringify({ kind: "trigger", via: "keyboard" }))?.kind).toBe("trigger");
+    expect(parseClientMessage(JSON.stringify({ kind: "retry", extra: "ignored" }))).toEqual({ kind: "retry" });
+    expect(parseClientMessage(JSON.stringify({ kind: "screenshot", ts: 1, reason: "click", mimeType: "image/jpeg", data: "QUJD" }))?.kind).toBe("screenshot");
+    expect(parseClientMessage(JSON.stringify({ kind: "screenshot", ts: 1, reason: "scroll", mimeType: "image/jpeg", data: "QUJD" }))).toBeNull();
+  });
   it.each([
+    JSON.stringify({ kind: "audio", id: "x", mimeType: "audio/mpeg", data: "AA==", durationMs: 1 }),
+    JSON.stringify({ kind: "audio", id: "x", mimeType: "audio/wav", data: "not base64!", durationMs: 1 }),
+    JSON.stringify({ kind: "trigger", via: "mouse" }),
     "not json",
     "null",
     JSON.stringify({ kind: "event", event: { ts: "1", source: "action", type: "click" } }),
@@ -84,6 +94,19 @@ describe("startHub", () => {
     ws.close();
   });
 
+  it("sends messages back to a connected page", async () => {
+    let clientId = 0;
+    hub = await startHub({ onMessage: () => {}, onConnect: (c) => (clientId = c.id) });
+    const ws = connect(hub, {});
+    await new Promise((r) => ws.on("open", r));
+    for (let i = 0; i < 20 && !clientId; i++) await new Promise((r) => setTimeout(r, 10));
+    const received = new Promise<string>((r) => ws.on("message", (d) => r(d.toString())));
+    expect(hub.send(clientId, { kind: "say", text: "Got it" })).toBe(true);
+    expect(JSON.parse(await received)).toEqual({ kind: "say", text: "Got it" });
+    expect(hub.send(999, { kind: "say", text: "nobody" })).toBe(false);
+    ws.close();
+  });
+
   it("rejects a bad token with 401", async () => {
     hub = await startHub({ onMessage: () => {} });
     expect(await expectRejected(connect(hub, { token: "wrong" }))).toBe(401);
@@ -92,5 +115,21 @@ describe("startHub", () => {
   it("rejects a non-local origin with 403", async () => {
     hub = await startHub({ onMessage: () => {} });
     expect(await expectRejected(connect(hub, { origin: "https://evil.example" }))).toBe(403);
+  });
+
+  it("listens on a fixed port and reports EADDRINUSE when it is taken", async () => {
+    const first = await startHub({ onMessage: () => {} });
+    const port = first.port;
+    await first.close();
+
+    hub = await startHub({ port, onMessage: () => {} });
+    expect(hub.port).toBe(port);
+
+    const err = await startHub({ port, onMessage: () => {} }).then(
+      () => null,
+      (e: NodeJS.ErrnoException) => e,
+    );
+    expect(err?.code).toBe("EADDRINUSE");
+    expect(describeListenError(err, port)).toContain(`Port ${port} on 127.0.0.1 is already in use`);
   });
 });

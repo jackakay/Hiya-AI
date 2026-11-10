@@ -2,15 +2,19 @@
   "name": "voice-bug",
   "private": true,
   "packageManager": "pnpm@12.16.1",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "pnpm -r --filter './packages/**' run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
-    "dev:demo": "pnpm --filter demo-app dev"
+    "dev:demo": "pnpm --filter demo-app dev",
+    "package:extension": "pnpm --filter voice-bug-extension package"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "happy-dom": "^20.0.0",
     "typescript": "~5.7.2",
     "vitest": "^3.0.0"
   }

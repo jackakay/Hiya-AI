@@ -6,28 +6,146 @@
   "private": true,
   "publisher": "voice-bug",
   "license": "UNLICENSED",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Debuggers", "Other"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Other"
+  ],
   "main": "./dist/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
-      { "command": "voiceBug.showOutput", "title": "Voice Bug: Show Output" },
-      { "command": "voiceBug.restartHub", "title": "Voice Bug: Restart Capture Hub" }
-    ]
+      {
+        "command": "voiceBug.showOutput",
+        "title": "Voice Bug: Show Output"
+      },
+      {
+        "command": "voiceBug.restartHub",
+        "title": "Voice Bug: Restart Capture Hub"
+      },
+      {
+        "command": "voiceBug.startDevServer",
+        "title": "Voice Bug: Start Dev Server"
+      },
+      {
+        "command": "voiceBug.stopDevServer",
+        "title": "Voice Bug: Stop Dev Server"
+      },
+      {
+        "command": "voiceBug.diagnoseLastError",
+        "title": "Voice Bug: Diagnose Last Error"
+      },
+      {
+        "command": "voiceBug.refineDiagnosis",
+        "title": "Voice Bug: Refine Diagnosis"
+      },
+      {
+        "command": "voiceBug.retryLastRequest",
+        "title": "Voice Bug: Retry Last Request"
+      },
+      {
+        "command": "voiceBug.setGeminiApiKey",
+        "title": "Voice Bug: Set Gemini API Key"
+      },
+      {
+        "command": "voiceBug.clearGeminiApiKey",
+        "title": "Voice Bug: Clear Gemini API Key"
+      }
+    ],
+    "configuration": {
+      "title": "Voice Bug",
+      "properties": {
+        "voiceBug.port": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "markdownDescription": "Port the capture hub listens on (always `127.0.0.1`). `0` picks a free port each time. Set a fixed port when you need to forward it, e.g. when VS Code is connected to a GitHub Codespace."
+        },
+        "voiceBug.devCommand": {
+          "type": "string",
+          "default": "pnpm dev:demo",
+          "markdownDescription": "Shell command run by **Voice Bug: Start Dev Server**. Its output is captured as `backend` events and shown in a terminal."
+        },
+        "voiceBug.devCwd": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Working directory for `#voiceBug.devCommand#`. Empty means the monorepo root containing the first workspace folder (nearest `pnpm-workspace.yaml` etc. above it), or that folder itself; relative paths are resolved against the workspace folder."
+        },
+        "voiceBug.geminiModel": {
+          "type": "string",
+          "default": "gemini-3.8-flash",
+          "markdownDescription": "Gemini model used by **Diagnose Last Error**. Default: `gemini-3.8-flash` (free tier). Other free-tier options: `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`."
+        },
+        "voiceBug.geminiFallbackModel": {
+          "type": "string",
+          "default": "gemini-3.5-flash-lite",
+          "markdownDescription": "Model to switch to when `#voiceBug.geminiModel#` stays overloaded (503) or rate-limited (429) after retries. Empty disables the fallback."
+        },
+        "voiceBug.transcribeModel": {
+          "type": "string",
+          "default": "gemini-3.5-transcribe",
+          "markdownDescription": "Gemini model that turns spoken utterances from the page overlay into text. Falls back to `#voiceBug.geminiFallbackModel#` if it fails."
+        },
+        "voiceBug.geminiThinking": {
+          "type": "string",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "low",
+          "markdownDescription": "How much the model thinks before answering. `low` is usually enough for a stack trace + source; higher is slower."
+        },
+        "voiceBug.geminiTimeoutSeconds": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 10,
+          "markdownDescription": "Give up on a Gemini call after this many seconds."
+        },
+        "voiceBug.sendScreenshots": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Send the two most recent page screenshots (taken after clicks and errors, with form values masked) to the model with the bundle, and show the latest in the panel."
+        },
+        "voiceBug.ollamaModel": {
+          "type": "string",
+          "default": "qwen3:8b",
+          "markdownDescription": "Local [Ollama](https://ollama.com) model used when Gemini can't answer (overloaded, rate-limited or offline). Runs on your machine; nothing is sent anywhere. Empty disables it. Ignored if Ollama isn't running."
+        },
+        "voiceBug.ollamaUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "markdownDescription": "Where Ollama listens."
+        },
+        "voiceBug.confirmBeforeSending": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Ask before sending the (redacted) bundle to Gemini. For voice reports, only the first send of each session asks."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "package": "node esbuild.mjs --production && vsce package --no-dependencies --allow-missing-repository --skip-license -o voice-bug.vsix"
   },
   "dependencies": {
+    "@google/genai": "^3.0.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/vscode": "~1.90.0",
     "@types/ws": "^8.5.13",
     "@voice-bug/shared": "workspace:*",
+    "@vscode/vsce": "^4.1.0",
     "esbuild": "^0.24.2"
   }
 }

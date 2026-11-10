@@ -5,6 +5,8 @@
       "label": "build extension",
       "type": "shell",
       "command": "pnpm --filter voice-bug-extension build",
+      // pnpm.cmd works even when PowerShell's execution policy blocks pnpm.ps1.
+      "windows": { "command": "pnpm.cmd --filter voice-bug-extension build" },
       "group": "build",
       "problemMatcher": "$esbuild"
     }

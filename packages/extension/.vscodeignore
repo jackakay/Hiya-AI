@@ -1,5 +1,7 @@
 src/**
+node_modules/**
 **/*.map
 **/*.test.ts
+**/*.vsix
 tsconfig.json
 esbuild.mjs

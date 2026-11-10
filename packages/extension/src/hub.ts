@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { ClientMessage } from "@voice-bug/shared";
+import type { ClientMessage, ServerMessage } from "@voice-bug/shared";
 
 /**
  * The capture hub: a WebSocket server bound to 127.0.0.1 that accepts
@@ -27,6 +27,8 @@ export type Hub = {
   port: number;
   token: string;
   clientCount(): number;
+  /** Sends to one page; returns false if it has disconnected. */
+  send(clientId: number, msg: ServerMessage): boolean;
   close(): Promise<void>;
 };
 
@@ -86,7 +88,42 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return msg as ClientMessage;
     }
   }
+  if (msg.kind === "audio") {
+    return typeof msg.id === "string" &&
+      msg.id.length <= 64 &&
+      msg.mimeType === "audio/wav" &&
+      typeof msg.data === "string" &&
+      /^[A-Za-z0-9+/]*={0,2}$/.test(msg.data) &&
+      typeof msg.durationMs === "number"
+      ? (msg as ClientMessage)
+      : null;
+  }
+  if (msg.kind === "trigger") {
+    return msg.via === "keyboard" ? (msg as ClientMessage) : null;
+  }
+  if (msg.kind === "retry") return { kind: "retry" };
+  if (msg.kind === "screenshot") {
+    return typeof msg.ts === "number" &&
+      (msg.reason === "click" || msg.reason === "error") &&
+      msg.mimeType === "image/jpeg" &&
+      typeof msg.data === "string" &&
+      /^[A-Za-z0-9+/]*={0,2}$/.test(msg.data)
+      ? (msg as ClientMessage)
+      : null;
+  }
   return null;
+}
+
+/** Turns a `listen` failure into a message that says what to do about it. */
+export function describeListenError(err: unknown, port: number): string {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "EADDRINUSE") {
+    return `Port ${port} on 127.0.0.1 is already in use (another VS Code window or app?). Free it, or change the "voiceBug.port" setting (0 = pick a free port), then run "Voice Bug: Restart Capture Hub".`;
+  }
+  if (code === "EACCES") {
+    return `Not allowed to listen on port ${port} on 127.0.0.1. Choose another "voiceBug.port" (0 = pick a free port).`;
+  }
+  return `Could not listen on 127.0.0.1:${port}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
 function reject(socket: Duplex, status: number, reason: string): void {
@@ -101,6 +138,7 @@ export function startHub(options: HubOptions): Promise<Hub> {
     res.writeHead(426).end();
   });
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
+  const sockets = new Map<number, WebSocket>();
   let nextId = 1;
 
   server.on("upgrade", (req, socket, head) => {
@@ -116,6 +154,7 @@ export function startHub(options: HubOptions): Promise<Hub> {
     }
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       const client: ClientInfo = { id: nextId++, origin: origin! };
+      sockets.set(client.id, ws);
       options.onConnect?.(client);
       ws.on("message", (data, isBinary) => {
         if (isBinary) return;
@@ -123,12 +162,18 @@ export function startHub(options: HubOptions): Promise<Hub> {
         if (msg) options.onMessage(msg, client);
         else warn(`Dropped malformed message from client ${client.id}`);
       });
-      ws.on("close", () => options.onDisconnect?.(client));
+      ws.on("close", () => {
+        sockets.delete(client.id);
+        options.onDisconnect?.(client);
+      });
     });
   });
 
   return new Promise((resolve, reject) => {
-    server.once("error", reject);
+    server.once("error", (err) => {
+      wss.close();
+      reject(err);
+    });
     server.listen(options.port ?? 0, "127.0.0.1", () => {
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
@@ -136,6 +181,12 @@ export function startHub(options: HubOptions): Promise<Hub> {
         port,
         token,
         clientCount: () => wss.clients.size,
+        send: (clientId, msg) => {
+          const ws = sockets.get(clientId);
+          if (!ws || ws.readyState !== ws.OPEN) return false;
+          ws.send(JSON.stringify(msg));
+          return true;
+        },
         close: () =>
           new Promise<void>((done) => {
             for (const ws of wss.clients) ws.terminate();

@@ -7,7 +7,9 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/packages/extension",
-        "${workspaceFolder}"
+        // Open the app under test, not the repo: VS Code won't open a folder that is
+        // already open in another window. Start Dev Server still runs from the repo root.
+        "${workspaceFolder}/demo-app"
       ],
       "outFiles": ["${workspaceFolder}/packages/extension/dist/**/*.js"],
       "preLaunchTask": "build extension"
