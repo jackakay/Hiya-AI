@@ -57,7 +57,8 @@ export type SentSource = {
 export const CONTEXT_LINES = 20;
 const RELATED_CONTEXT_LINES = 12;
 const MAX_SOURCE_FILES = 3;
-const MAX_TIMELINE_LINES = 300;
+/** Most recent lines kept; older ones rarely matter and every line is input the model must read. */
+const MAX_TIMELINE_LINES = 150;
 const MAX_DIFF_CHARS = 6000;
 
 const BACKEND_ERROR = /\b[A-Z]\w*(?:Error|Exception)\b|^\s*(?:Error|Unhandled|Uncaught|FATAL|panic)\b/;

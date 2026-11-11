@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { Bundle } from "../bundle";
-import { describeModelError, errorStatus, isRetryable, thoughtHeading, withFallback, withRetry, type Generate, type Turn } from "./gemini";
+import { describeModelError, errorStatus, isRetryable, isTransientOverload, thoughtHeading, withFallback, withRetry, type Generate, type Turn } from "./gemini";
 import { buildUserPrompt } from "./prompt";
 import { DiagnosisError, describeStage, runDiagnosis, type RunStage } from "./run";
 import { goodDiagnosis } from "./fixtures";
@@ -199,6 +199,18 @@ describe("withRetry", () => {
     ]);
     await expect(g([])).rejects.toThrow("status 401");
     expect(lite).not.toHaveBeenCalled();
+  });
+
+  it("retries only momentary overloads on the same model; a rate limit falls through at once", async () => {
+    let calls = 0;
+    const rateLimited: Generate = async () => {
+      calls++;
+      throw apiError(429);
+    };
+    await expect(withRetry(rateLimited, { retryOn: isTransientOverload, sleep: async () => {} })([])).rejects.toThrow("status 429");
+    expect(calls).toBe(1);
+    expect(isTransientOverload(apiError(503))).toBe(true);
+    expect(isTransientOverload(apiError(429))).toBe(false);
   });
 
   it("classifies errors", () => {

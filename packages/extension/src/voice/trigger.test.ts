@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cleanTranscript } from "./transcribe";
-import { isRetryPhrase, parseTrigger, spokenSummary } from "./trigger";
+import { isRetryPhrase, needsDetails, parseTrigger, spokenSummary } from "./trigger";
 
 describe("parseTrigger", () => {
   it.each([
@@ -27,6 +27,16 @@ describe("parseTrigger", () => {
   ])("%j is ignored", (transcript) => {
     expect(parseTrigger(transcript)).toEqual({ triggered: false });
   });
+});
+
+describe("needsDetails", () => {
+  it.each([
+    ["", true],
+    ["um.", true],
+    ["okay so", true],
+    ["save did nothing", false],
+    ["the search box is empty but results stay", false],
+  ])("%j -> %s", (note, expected) => expect(needsDetails(note)).toBe(expected));
 });
 
 describe("isRetryPhrase", () => {

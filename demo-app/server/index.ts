@@ -17,7 +17,7 @@ app.get("/api/notes", (_req, res) => {
 });
 
 app.post("/api/save", (req, res) => {
-  const name = req.body.name.trim();
+  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
   const note: Note = { id: nextId++, name, createdAt: new Date().toISOString() };
   notes.push(note);
   console.log(`saved note ${note.id}`);

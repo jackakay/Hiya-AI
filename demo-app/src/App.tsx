@@ -17,6 +17,8 @@ export function App() {
 
   async function save(e: FormEvent) {
     e.preventDefault();
+    if (!name.trim()) return;
+    
     const res = await fetch("/api/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -29,8 +31,8 @@ export function App() {
     }
   }
 
-  async function remove(index: number) {
-    await fetch(`/api/notes/${index}`, { method: "DELETE" });
+  async function remove(id: number, index: number) {
+    await fetch(`/api/notes/${id}`, { method: "DELETE" });
     setNotes((prev) => prev.filter((_, i) => i !== index));
     setSelected(null);
   }
@@ -60,7 +62,7 @@ export function App() {
             <button className="link" onClick={() => setSelected(n)}>
               {n.name}
             </button>
-            <button className="delete" aria-label={`Delete ${n.name}`} onClick={() => remove(i)}>
+            <button className="delete" aria-label={`Delete ${n.name}`} onClick={() => remove(n.id, i)}>
               ✕
             </button>
           </li>

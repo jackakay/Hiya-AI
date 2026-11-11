@@ -78,18 +78,23 @@
         },
         "voiceBug.geminiModel": {
           "type": "string",
-          "default": "gemini-3.8-flash",
-          "markdownDescription": "Gemini model used by **Diagnose Last Error**. Default: `gemini-3.8-flash` (free tier). Other free-tier options: `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`."
+          "default": "gemini-3.5-flash-lite",
+          "markdownDescription": "Gemini model used by **Diagnose Last Error**. Default: `gemini-3.5-flash-lite` (free tier, fastest; found every planted bug in testing). `gemini-3.8-flash` gives richer fixes but is slower and rate-limited sooner on the free tier."
         },
         "voiceBug.geminiFallbackModel": {
           "type": "string",
-          "default": "gemini-3.5-flash-lite",
-          "markdownDescription": "Model to switch to when `#voiceBug.geminiModel#` stays overloaded (503) or rate-limited (429) after retries. Empty disables the fallback."
+          "default": "gemini-3.8-flash",
+          "markdownDescription": "Model to switch to straight away when `#voiceBug.geminiModel#` is rate-limited (429) or stays overloaded (5xx). Empty disables the fallback."
+        },
+        "voiceBug.requireTriggerPhrase": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "While the page overlay is listening, only sentences with a trigger phrase (\"that's a bug…\") are reports. Turn off to treat **everything you say while listening** as a bug report (every sentence is then sent to Gemini)."
         },
         "voiceBug.transcribeModel": {
           "type": "string",
-          "default": "gemini-3.5-transcribe",
-          "markdownDescription": "Gemini model that turns spoken utterances from the page overlay into text. Falls back to `#voiceBug.geminiFallbackModel#` if it fails."
+          "default": "gemini-3.5-flash-lite",
+          "markdownDescription": "Gemini model that turns spoken utterances from the page overlay into text. Falls back to `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite`; models your key cannot use (404) are skipped for the session."
         },
         "voiceBug.geminiThinking": {
           "type": "string",
@@ -99,8 +104,8 @@
             "medium",
             "high"
           ],
-          "default": "low",
-          "markdownDescription": "How much the model thinks before answering. `low` is usually enough for a stack trace + source; higher is slower."
+          "default": "minimal",
+          "markdownDescription": "How much the model thinks before answering. `minimal` is fastest and enough for a stack trace + source; raise it for harder bugs."
         },
         "voiceBug.geminiTimeoutSeconds": {
           "type": "integer",

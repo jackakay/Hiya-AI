@@ -34,7 +34,8 @@ export async function createVad(cb: VadCallbacks, audioContext?: AudioContext): 
     },
     // A short phrase like "that's a bug" is ~0.7s; ignore coughs and clicks.
     minSpeechMs: 400,
-    redemptionMs: 700,
+    // A pause this long ends the sentence; 1.2s lets people think mid-sentence.
+    redemptionMs: 1200,
     preSpeechPadMs: 300,
     startOnLoad: true,
     onFrameProcessed: (p, frame) => {

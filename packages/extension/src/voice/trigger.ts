@@ -34,6 +34,11 @@ export function isRetryPhrase(transcript: string): boolean {
   return /^(?:(?:ok|okay|please|can you|could you)\s+)*(?:try (?:it |that )?again|retry(?: it| that)?|send it again|resend(?: it)?|again please)(?:\s+please)?$/.test(t);
 }
 
+/** True when what followed the trigger phrase is too short to describe the bug ("", "okay", "um"). */
+export function needsDetails(note: string): boolean {
+  return note.replace(/[^\p{L}\p{N}\s]/gu, " ").trim().split(/\s+/).filter(Boolean).length < 3;
+}
+
 /** One sentence to speak when the diagnosis is ready. */
 export function spokenSummary(d: { title: string; rootCause: { file: string; line: number; confidence: string }; followUpQuestion?: string }): string {
   const file = d.rootCause.file.split("/").pop();

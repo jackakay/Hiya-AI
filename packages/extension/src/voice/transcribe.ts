@@ -2,7 +2,11 @@ import { GoogleGenAI } from "@google/genai";
 
 /** Speech to text with Gemini (same API key as the diagnosis). */
 
-export const DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe";
+/**
+ * `gemini-3.5-transcribe` answers 404 through generateContent with a normal
+ * API key, so a fast general model transcribes instead (about 1–2s per phrase).
+ */
+export const DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-flash-lite";
 
 export type Transcribe = (wavBase64: string, signal?: AbortSignal) => Promise<string>;
 

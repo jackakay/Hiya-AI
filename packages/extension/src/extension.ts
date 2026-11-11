@@ -31,13 +31,14 @@ import {
   errorStatus,
   geminiGenerate,
   isAbort,
+  isTransientOverload,
   withFallback,
   withRetry,
   type Thinking,
 } from "./diagnosis/gemini";
 import { DiagnosisError, describeStage, runDiagnosis } from "./diagnosis/run";
 import { DiagnosisView } from "./diagnosis/view";
-import { isRetryPhrase, parseTrigger, spokenSummary } from "./voice/trigger";
+import { isRetryPhrase, needsDetails, parseTrigger, spokenSummary } from "./voice/trigger";
 import { DEFAULT_TRANSCRIBE_MODEL, geminiTranscribe } from "./voice/transcribe";
 
 const API_KEY_SECRET = "voiceBug.geminiApiKey";
@@ -219,8 +220,12 @@ function recordScreenshot(msg: Extract<ClientMessage, { kind: "screenshot" }>): 
 /** The two most recent screenshots in the bundle window (they show what the user saw last). */
 function pickScreenshots(): Array<{ ts: number; reason: "click" | "error"; data: string }> {
   if (!config().get<boolean>("sendScreenshots", true)) return [];
+  // Images are the slowest input to process; they only add something when
+  // the page itself broke (a crash, a blank page, a failed resource).
+  const pageBroke = store.snapshot(BUNDLE_WINDOW_MS).some((e) => e.source === "console" && ["uncaught-error", "unhandled-rejection", "resource-error"].includes(e.type));
+  if (!pageBroke) return [];
   const from = Date.now() - BUNDLE_WINDOW_MS;
-  return screenshots.filter((s) => s.ts >= from).slice(-2);
+  return screenshots.filter((s) => s.ts >= from).slice(-1);
 }
 
 /**
@@ -403,8 +408,8 @@ async function callModel(opts: ModelRequest): Promise<void> {
   }
 
   const model = config().get<string>("geminiModel", DEFAULT_MODEL).trim() || DEFAULT_MODEL;
-  const thinkingSetting = config().get<string>("geminiThinking", "low");
-  const thinking: Thinking = (THINKING_LEVELS as readonly string[]).includes(thinkingSetting) ? (thinkingSetting as Thinking) : "low";
+  const thinkingSetting = config().get<string>("geminiThinking", "minimal");
+  const thinking: Thinking = (THINKING_LEVELS as readonly string[]).includes(thinkingSetting) ? (thinkingSetting as Thinking) : "minimal";
   const timeoutMs = Math.max(10, config().get<number>("geminiTimeoutSeconds", 90)) * 1000;
 
   // What the notification shows; a timer re-renders it every half second with the elapsed time.
@@ -422,11 +427,13 @@ async function callModel(opts: ModelRequest): Promise<void> {
   const ollamaUrl = config().get<string>("ollamaUrl", DEFAULT_OLLAMA_URL).trim() || DEFAULT_OLLAMA_URL;
   const chain = [...new Set([model, fallback].filter(Boolean))].map((name) => ({
     name,
+    // Speed: a rate limit (429) switches to the next model at once; only a
+    // momentary overload (5xx) gets one quick retry on the same model.
     generate: withRetry(geminiGenerate(apiKey, name, thinking), {
-      attempts: 3,
-      baseDelayMs: 2000,
-      onRetry: ({ attempt, attempts, delayMs, err }) =>
-        setStatus(`${name} is busy or rate-limited (${errorStatus(err) ?? "error"}); retrying in ${delayMs / 1000}s (attempt ${attempt + 1}/${attempts})…`),
+      attempts: 2,
+      baseDelayMs: 1000,
+      retryOn: isTransientOverload,
+      onRetry: ({ delayMs, err }) => setStatus(`${name} is overloaded (${errorStatus(err) ?? "error"}); retrying in ${delayMs / 1000}s…`),
     }),
   }));
   if (ollamaModel) chain.push({ name: `ollama:${ollamaModel}`, generate: ollamaGenerate(ollamaUrl, ollamaModel) });
@@ -534,19 +541,23 @@ async function handleAudio(msg: Extract<ClientMessage, { kind: "audio" }>, clien
   }
   tellPage(clientId, { kind: "status", state: "transcribing", text: "Transcribing…" });
   const primary = config().get<string>("transcribeModel", DEFAULT_TRANSCRIBE_MODEL).trim() || DEFAULT_TRANSCRIBE_MODEL;
-  const fallback = config().get<string>("geminiFallbackModel", DEFAULT_FALLBACK_MODEL).trim();
+  // Transcription needs a fast model: a slow fallback (e.g. Flash on a busy free tier) just times out.
+  const chain = [...new Set([primary, ...TRANSCRIBE_FALLBACKS])].filter((m) => !unavailableTranscribeModels.has(m));
   const started = Date.now();
   let text: string | undefined;
   let lastErr: unknown;
-  for (const model of [...new Set([primary, fallback].filter(Boolean))]) {
+  for (const [i, model] of chain.entries()) {
+    const next = chain.at(i + 1);
     try {
-      text = await geminiTranscribe(apiKey, model)(msg.data, AbortSignal.timeout(20_000));
+      text = await geminiTranscribe(apiKey, model)(msg.data, AbortSignal.timeout(15_000));
       break;
     } catch (err) {
       lastErr = err;
       // A bad key won't work on the fallback either.
       if (errorStatus(err) === 401 || errorStatus(err) === 403) break;
-      output.appendLine(`Transcription with ${model} failed (${errorStatus(err) ?? (err as Error)?.message}); ${model === fallback ? "giving up" : `trying ${fallback}`}.`);
+      // A model this key can't use (404) is skipped for the rest of the session.
+      if (errorStatus(err) === 404) unavailableTranscribeModels.add(model);
+      output.appendLine(`Transcription with ${model} failed (${errorStatus(err) ?? (err as Error)?.message}); ${next ? `trying ${next}` : "giving up"}.`);
     }
   }
   if (text === undefined) {
@@ -554,6 +565,20 @@ async function handleAudio(msg: Extract<ClientMessage, { kind: "audio" }>, clien
     output.appendLine(`ERROR Transcription failed: ${message}`);
     notTranscribed();
     tellPage(clientId, { kind: "status", state: "error", text: "Transcription failed (see the Voice Bug output in VS Code)." });
+    return;
+  }
+
+  // Right after a bare "that's a bug", the next sentence is the details.
+  const waiting = awaitingDetails;
+  if (waiting && waiting.clientId === clientId && text) {
+    clearTimeout(waiting.timer);
+    awaitingDetails = undefined;
+    const details = parseTrigger(text);
+    const note = details.triggered ? details.note : text;
+    tellPage(clientId, { kind: "transcript", id: msg.id, text, triggered: true, role: "report" });
+    output.appendLine(`Voice details (${Date.now() - started}ms): “${text}”`);
+    tellPage(clientId, { kind: "say", text: "Got it, looking into it." });
+    await diagnose({ clientId, note, via: "voice", transcript: `${waiting.transcript} ${text}` });
     return;
   }
 
@@ -567,12 +592,15 @@ async function handleAudio(msg: Extract<ClientMessage, { kind: "audio" }>, clien
   const trigger = parseTrigger(text);
   // Shortly after a diagnosis, a sentence without a trigger phrase is a follow-up to it.
   const refining = !trigger.triggered && !!text && lastDiagnosis?.clientId === clientId && Date.now() - lastDiagnosis.at < REFINE_WINDOW_MS;
+  // With the trigger phrase turned off, anything said while listening is a report.
+  const reportWithoutPhrase = !trigger.triggered && !refining && !!text && !config().get<boolean>("requireTriggerPhrase", true);
+  const isReport = trigger.triggered || reportWithoutPhrase;
   tellPage(clientId, {
     kind: "transcript",
     id: msg.id,
     text,
-    triggered: trigger.triggered || refining,
-    role: refining ? "followup" : trigger.triggered ? "report" : "ignored",
+    triggered: isReport || refining,
+    role: refining ? "followup" : isReport ? "report" : "ignored",
   });
   if (refining) {
     output.appendLine(`Voice follow-up (${Date.now() - started}ms): “${text}”`);
@@ -580,16 +608,40 @@ async function handleAudio(msg: Extract<ClientMessage, { kind: "audio" }>, clien
     await diagnose({ clientId, note: "", via: "voice", transcript: text }, text);
     return;
   }
-  if (!trigger.triggered) {
+  if (!isReport) {
     // Privacy: not a bug report, so the words aren't kept anywhere.
     output.appendLine(`Voice: ${(msg.durationMs / 1000).toFixed(1)}s utterance, no trigger phrase (discarded, ${Date.now() - started}ms).`);
     tellPage(clientId, { kind: "status", state: "idle", text: "Listening for “that's a bug…”" });
     return;
   }
-  output.appendLine(`Voice trigger (${Date.now() - started}ms): “${text}”`);
+  const note = trigger.triggered ? trigger.note : text;
+  output.appendLine(`Voice ${trigger.triggered ? "trigger" : "report"} (${Date.now() - started}ms): “${text}”`);
+
+  // "That's a bug." and a pause: give the developer time to say what's wrong.
+  if (needsDetails(note)) {
+    const timer = setTimeout(() => {
+      if (awaitingDetails?.timer !== timer) return;
+      awaitingDetails = undefined;
+      output.appendLine("No details followed; diagnosing with what was said.");
+      tellPage(clientId, { kind: "say", text: "Looking into it." });
+      void diagnose({ clientId, note: "", via: "voice", transcript: text });
+    }, DETAILS_WAIT_MS);
+    awaitingDetails = { clientId, transcript: text, timer };
+    tellPage(clientId, { kind: "say", text: "Go ahead." });
+    tellPage(clientId, { kind: "status", state: "idle", text: `Listening: tell me what went wrong (${DETAILS_WAIT_MS / 1000}s)…` });
+    return;
+  }
   tellPage(clientId, { kind: "say", text: "Got it, looking into it." });
-  await diagnose({ clientId, note: trigger.note, via: "voice", transcript: text });
+  await diagnose({ clientId, note, via: "voice", transcript: text });
 }
+
+/** Fast models tried after `voiceBug.transcribeModel`, in order. */
+const TRANSCRIBE_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+const unavailableTranscribeModels = new Set<string>();
+
+/** After a bare "that's a bug", the next sentence (within this window) is taken as the details. */
+const DETAILS_WAIT_MS = 10_000;
+let awaitingDetails: { clientId: number; transcript: string; timer: ReturnType<typeof setTimeout> } | undefined;
 
 async function handleKeyboardTrigger(clientId: number): Promise<void> {
   output.appendLine("Keyboard trigger from the page (Ctrl+Shift+B).");

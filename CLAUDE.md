@@ -158,7 +158,7 @@ Milestone 6 (voice) done. **Groq/Whisper was replaced by Gemini transcription** 
   - `vad.ts`: lazy-imported `MicVAD` (Silero v5, single-thread ORT).
   - `wav.ts`: `encodeWav`, `toBase64`, `clip`.
   - `sdk/src/vite.ts` serves `/__voice-bug/vad/*` (vad-web dist) and `/__voice-bug/ort/*` (onnxruntime-web dist) from node_modules, with safe file-name checks.
-- Extension `voice/`: `transcribe.ts` (`geminiTranscribe`, model setting `voiceBug.transcribeModel` = `gemini-3.5-transcribe`, falling back to `geminiFallbackModel`) and `trigger.ts` (`parseTrigger` → note after the phrase; `spokenSummary`). In `extension.ts`, `handleAudio` transcribes, discards non-triggers without logging the words, says "Got it, looking into it.", then calls `diagnose({ clientId, note, via })`. A voice/keyboard trigger skips the input box and confirmation, records a `voice` event on the timeline, streams status to the page, and speaks the summary. A `diagnosing` flag blocks parallel runs.
+- Extension `voice/`: `transcribe.ts` (`geminiTranscribe`, model setting `voiceBug.transcribeModel` = `gemini-3.5-flash-lite`, because `gemini-3.5-transcribe` returns 404 via generateContent; falls back to `TRANSCRIBE_FALLBACKS` (3.5/3.1 Flash-Lite) with a 15s timeout, and models that 404 are skipped for the session) and `trigger.ts` (`parseTrigger` → note after the phrase; `spokenSummary`). In `extension.ts`, `handleAudio` transcribes, discards non-triggers without logging the words, says "Got it, looking into it.", then calls `diagnose({ clientId, note, via })`. A voice/keyboard trigger skips the input box and confirmation, records a `voice` event on the timeline, streams status to the page, and speaks the summary. A `diagnosing` flag blocks parallel runs.
 - Not live-tested by Claude: the real microphone/VAD in a browser and the Gemini transcription call (the key is in the user's SecretStorage). Asset serving and the Vite transform of the VAD module were verified over HTTP.
 
 Milestone 7 done, except session replay (rrweb/2b is still not done, by the user's choice):
@@ -184,6 +184,12 @@ Milestone 7 done, except session replay (rrweb/2b is still not done, by the user
   - search race: `App.tsx:41` and `server/index.ts:39`.
 - Not live-tested by Claude: Apply fix in VS Code, screenshots in a real browser, a voice refinement, and Ollama.
 - **Transcript in the overlay:** the "Transcript" button opens a list of the last 30 utterances and spoken replies, kept in sessionStorage `voiceBug.transcript`, rendered with textContent only. A pending entry is added when audio is sent and replaced when the `transcript` ServerMessage with the same id arrives, which now carries `role` (`TranscriptRole`: report/followup/retry/ignored). The extension sends an empty `ignored` transcript when it can't transcribe (busy, no key, failure).
+- **Speed (2026-11-11):**
+  - Default model `gemini-3.5-flash-lite` with fallback `gemini-3.8-flash` (Flash took 57–71s on the free tier because of 429s; Flash-Lite took 13–29s and found every planted bug). Thinking defaults to `minimal`.
+  - A 429 switches model immediately; only 5xx gets one 1s retry (`withRetry` `retryOn: isTransientOverload`).
+  - Screenshots are sent (just the latest) only when the window has a browser crash/rejection/resource error.
+  - The timeline is capped at 150 lines.
+  - The prompt and schema cap answer length (≤5 repro steps, ≤4–5 evidence items, 2-sentence fields).
 - **Better fixes:**
   - `sourceWindow` sends source files of ≤ `WHOLE_FILE_LINES` (250) lines whole; larger files get ±20 lines (frames) or ±12 (related). A real fix often needs imports or state at the top of the file, and without them the model returned a comment-only "fix".
   - `isCosmeticDiff` in `validate.ts` rejects diffs that only change comments or whitespace, which triggers the correction turn.

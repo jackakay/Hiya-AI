@@ -17,9 +17,13 @@ export type Generate = (
   options?: GenerateOptions,
 ) => Promise<{ text: string; usage?: { inputTokens?: number; outputTokens?: number; thinkingTokens?: number } }>;
 
-export const DEFAULT_MODEL = "gemini-3.8-flash";
-/** Used when the main model stays overloaded/rate-limited after its retries. Also on the free tier. */
-export const DEFAULT_FALLBACK_MODEL = "gemini-3.5-flash-lite";
+/**
+ * Flash-Lite first: in testing it named the right root cause on every planted
+ * bug in 13–29s, while Flash took 57–71s on the free tier (rate limits).
+ */
+export const DEFAULT_MODEL = "gemini-3.5-flash-lite";
+/** Used when the main model is rate-limited or overloaded (a separate free-tier quota). */
+export const DEFAULT_FALLBACK_MODEL = "gemini-3.8-flash";
 export const THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const;
 export type Thinking = (typeof THINKING_LEVELS)[number];
 
@@ -146,6 +150,16 @@ export function isAbort(err: unknown): boolean {
   return name === "AbortError" || name === "TimeoutError";
 }
 
+/**
+ * Worth one quick retry on the SAME model: a momentary overload (5xx).
+ * A rate limit (429) isn't: the free tier's window is about a minute, so
+ * waiting a few seconds rarely helps. Switching model (other quota) does.
+ */
+export function isTransientOverload(err: unknown): boolean {
+  const status = errorStatus(err);
+  return !isAbort(err) && (status === 500 || status === 503 || status === 504);
+}
+
 export function isRetryable(err: unknown): boolean {
   if (isAbort(err)) return false;
   const status = errorStatus(err);
@@ -157,6 +171,8 @@ export type RetryOptions = {
   baseDelayMs?: number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   onRetry?: (info: { attempt: number; attempts: number; delayMs: number; err: unknown }) => void;
+  /** Which errors are worth retrying on the same model (default: 429 and 5xx). */
+  retryOn?: (err: unknown) => boolean;
 };
 
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -180,7 +196,7 @@ export function withRetry(generate: Generate, opts: RetryOptions = {}): Generate
       try {
         return await generate(turns, options);
       } catch (err) {
-        if (attempt >= attempts || !isRetryable(err) || options?.signal?.aborted) throw err;
+        if (attempt >= attempts || !(opts.retryOn ?? isRetryable)(err) || options?.signal?.aborted) throw err;
         const delayMs = base * 2 ** (attempt - 1);
         opts.onRetry?.({ attempt, attempts, delayMs, err });
         await sleep(delayMs, options?.signal);

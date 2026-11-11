@@ -17,7 +17,7 @@ Rules:
 - A fix must change behaviour. Never return a diff that only adds comments or TODOs; if you can't write the real change, omit proposedFix and explain the fix in rootCause.explanation. Small files are shown in full, so you may add imports, state or helper functions where needed.
 - "proposedFix.diff" is a minimal unified diff (with @@ hunk headers and 2-3 lines of context copied exactly from the excerpt) against that same file. Fix the cause, not the symptom; where it matters, also make the failure visible to the user instead of silent. Omit proposedFix if you are not confident.
 - Lines like "[redacted]", "[email]" and "<root>" are placeholders added for privacy; never put them in a fix.
-- Be concise: title under 80 characters, summary 1-3 sentences.`;
+- Be concise; the developer is waiting. Title under 80 characters; summary, expected, actual and rootCause.explanation at most 2 sentences each; at most 5 reproSteps and 4 evidence items; the diff only touches the lines the fix needs.`;
 
 export function buildUserPrompt(bundleText: string, expected: string | undefined): string {
   const said = expected?.trim() ? `The developer said they expected: "${expected.trim()}"` : "The developer did not say what they expected.";
@@ -38,7 +38,7 @@ export const DIAGNOSIS_JSON_SCHEMA = {
   properties: {
     title: { type: "string" },
     summary: { type: "string" },
-    reproSteps: { type: "array", items: { type: "string" } },
+    reproSteps: { type: "array", items: { type: "string" }, maxItems: 6 },
     expected: { type: "string" },
     actual: { type: "string" },
     rootCause: {
@@ -51,7 +51,7 @@ export const DIAGNOSIS_JSON_SCHEMA = {
       },
       required: ["file", "line", "explanation", "confidence"],
     },
-    evidence: { type: "array", items: { type: "string" } },
+    evidence: { type: "array", items: { type: "string" }, maxItems: 5 },
     proposedFix: {
       type: "object",
       properties: { file: { type: "string" }, diff: { type: "string" } },
